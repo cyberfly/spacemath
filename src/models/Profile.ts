@@ -30,16 +30,20 @@ export interface ProfileSettings {
 export interface Profile {
   id: string;
   name: string;
+  avatar: string;
   createdAt: number;
   lastPlayed: number;
   settings: ProfileSettings;
   progress: ProfileProgress;
 }
 
-export function createDefaultProfile(id: string, name: string): Profile {
+export const DEFAULT_AVATAR = '🧑‍🚀';
+
+export function createDefaultProfile(id: string, name: string, avatar: string = DEFAULT_AVATAR): Profile {
   return {
     id,
     name,
+    avatar,
     createdAt: Date.now(),
     lastPlayed: Date.now(),
     settings: {

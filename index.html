@@ -16,7 +16,7 @@
       <div class="profiles-grid">
         <template x-for="profile in profiles" :key="profile.id">
           <button class="profile-card" @click="selectProfile(profile.id)">
-            <div class="profile-avatar" x-text="getEvolutionEmoji(profile.progress.evolutionStage)"></div>
+            <div class="profile-avatar" x-text="profile.avatar"></div>
             <div class="profile-name" x-text="profile.name"></div>
             <div class="profile-xp">XP: <span x-text="profile.progress.xp"></span></div>
           </button>
@@ -44,6 +44,21 @@
             required
           />
         </div>
+        <div class="form-group avatar-group">
+          <label>Choose Avatar:</label>
+          <div class="avatar-grid">
+            <template x-for="avatar in availableAvatars" :key="avatar">
+              <button
+                type="button"
+                class="avatar-option"
+                :class="{ selected: selectedAvatar === avatar }"
+                :aria-pressed="selectedAvatar === avatar"
+                @click="selectedAvatar = avatar"
+                x-text="avatar"
+              ></button>
+            </template>
+          </div>
+        </div>
         <div class="button-row">
           <button type="button" class="btn btn-secondary" @click="screen = 'profiles'">Back</button>
           <button type="submit" class="btn btn-primary">Create!</button>
@@ -55,7 +70,7 @@
     <div x-show="screen === 'menu'" class="screen menu-screen">
       <div class="menu-header">
         <div class="player-info">
-          <span class="player-avatar" x-text="currentProfile ? getEvolutionEmoji(currentProfile.progress.evolutionStage) : ''"></span>
+          <span class="player-avatar" x-text="currentProfile?.avatar || ''"></span>
           <span class="player-name" x-text="currentProfile?.name"></span>
         </div>
         <div class="player-stats">
@@ -64,13 +79,28 @@
             <span class="stat-value" x-text="currentProfile?.progress.xp || 0"></span>
           </div>
           <div class="stat">
-            <span class="stat-label">Stage</span>
+            <span class="stat-label">Ship</span>
             <span class="stat-value" x-text="getEvolutionName(currentProfile?.progress.evolutionStage || 1)"></span>
           </div>
         </div>
       </div>
 
       <h1 class="game-title">SpaceMath</h1>
+
+      <div class="menu-difficulty">
+        <label>Choose Difficulty</label>
+        <div class="difficulty-selector">
+          <template x-for="level in [1,2,3,4,5]" :key="level">
+            <button
+              class="difficulty-btn"
+              :class="{ active: selectedDifficulty === level }"
+              @click="setDifficulty(level)"
+            >
+              <span x-text="getDifficultyLabel(level)"></span>
+            </button>
+          </template>
+        </div>
+      </div>
 
       <div class="menu-buttons">
         <button class="btn btn-large btn-primary" @click="startGame('shoot')">
@@ -88,12 +118,12 @@
       </div>
 
       <div class="evolution-progress">
-        <p class="evolution-label">Evolution Progress</p>
+        <p class="evolution-label">Ship Upgrade Progress</p>
         <div class="progress-bar">
           <div class="progress-fill" :style="`width: ${getEvolutionProgress()}%`"></div>
         </div>
         <p class="evolution-next">
-          <span x-text="getXPToNextEvolution()"></span> XP to next evolution!
+          <span x-text="getXPToNextEvolution()"></span> XP to next upgrade!
         </p>
       </div>
     </div>
@@ -101,21 +131,6 @@
     <!-- Settings Screen -->
     <div x-show="screen === 'settings'" class="screen settings-screen">
       <h2>Settings</h2>
-
-      <div class="settings-group">
-        <label>Difficulty Level</label>
-        <div class="difficulty-selector">
-          <template x-for="level in [1,2,3,4,5]" :key="level">
-            <button
-              class="difficulty-btn"
-              :class="{ active: currentProfile?.settings.difficulty === level }"
-              @click="setDifficulty(level)"
-            >
-              <span x-text="getDifficultyLabel(level)"></span>
-            </button>
-          </template>
-        </div>
-      </div>
 
       <div class="settings-group" x-show="currentProfile">
         <label class="toggle-label">
@@ -146,7 +161,21 @@
 
       <!-- HUD Overlay -->
       <div class="game-hud" x-show="screen === 'game'">
-        <div class="hud-left">
+        <div class="hud-top">
+          <div class="hud-center">
+            <!-- Equation shown in mothership for shoot mode, only display here for type mode -->
+            <div class="equation-display" x-show="gameMode === 'type' && gameState.currentEquation" x-text="gameState.currentEquation"></div>
+          </div>
+          <div class="hud-right">
+            <button class="btn-icon" @click="quitGame()">🏠</button>
+            <button class="btn-icon" @click="pauseGame()">⏸️</button>
+          </div>
+        </div>
+        <div class="hud-corner">
+          <div class="hud-player" x-show="currentProfile">
+            <span class="hud-avatar" x-text="currentProfile?.avatar || ''"></span>
+            <span class="hud-name" x-text="currentProfile?.name"></span>
+          </div>
           <div class="hud-item">
             <span class="hud-label">Score</span>
             <span class="hud-value" x-text="gameState.score"></span>
@@ -155,13 +184,13 @@
             <span class="hud-label">Streak</span>
             <span class="hud-value" x-text="gameState.streak"></span>
           </div>
-        </div>
-        <div class="hud-center">
-          <!-- Equation shown in mothership for shoot mode, only display here for type mode -->
-          <div class="equation-display" x-show="gameMode === 'type' && gameState.currentEquation" x-text="gameState.currentEquation"></div>
-        </div>
-        <div class="hud-right">
-          <button class="btn-icon" @click="pauseGame()">⏸️</button>
+          <div class="hud-item hud-hp">
+            <span class="hud-label">HP</span>
+            <div class="hp-bar">
+              <div class="hp-fill" :style="`width: ${Math.max(0, (gameState.lives / gameState.maxLives) * 100)}%`"></div>
+            </div>
+            <span class="hp-text" x-text="`${gameState.lives}/${gameState.maxLives}`"></span>
+          </div>
         </div>
       </div>
 
@@ -197,7 +226,7 @@
     </div>
 
     <!-- Game Over Screen -->
-    <div x-show="screen === 'gameover'" class="screen gameover-screen overlay">
+    <div x-show="screen === 'gameover'" x-effect="if (screen === 'gameover') { $nextTick(() => $refs.playAgain?.focus()) }" class="screen gameover-screen overlay">
       <div class="gameover-modal">
         <h2>Game Over!</h2>
         <div class="gameover-stats">
@@ -219,7 +248,7 @@
           </div>
         </div>
         <div class="button-row">
-          <button class="btn btn-primary" @click="playAgain()">Play Again</button>
+          <button class="btn btn-primary" @click="playAgain()" x-ref="playAgain">Play Again</button>
           <button class="btn btn-secondary" @click="screen = 'menu'">Menu</button>
         </div>
       </div>
@@ -228,14 +257,14 @@
     <!-- Evolution Screen -->
     <div x-show="screen === 'evolution'" class="screen evolution-screen overlay">
       <div class="evolution-modal">
-        <h2>EVOLUTION!</h2>
+        <h2>SHIP UPGRADE!</h2>
         <div class="evolution-animation">
           <div class="old-form" x-text="getEvolutionEmoji(evolutionData.from)"></div>
           <div class="arrow">➡️</div>
           <div class="new-form" x-text="getEvolutionEmoji(evolutionData.to)"></div>
         </div>
         <p class="evolution-message">
-          You evolved into a <span x-text="getEvolutionName(evolutionData.to)"></span>!
+          Your ship upgraded to <span x-text="getEvolutionName(evolutionData.to)"></span>!
         </p>
         <button class="btn btn-primary btn-large" @click="closeEvolution()">Awesome!</button>
       </div>

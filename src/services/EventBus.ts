@@ -12,6 +12,7 @@ export type GameEventType =
   | 'answer:submit'
   | 'evolution:trigger'
   | 'score:update'
+  | 'player:lives'
   | 'xp:update';
 
 export interface GameEventData {
@@ -26,6 +27,7 @@ export interface GameEventData {
   'answer:submit': { answer: number };
   'evolution:trigger': { from: number; to: number };
   'score:update': { score: number; streak: number };
+  'player:lives': { lives: number };
   'xp:update': { xp: number; evolutionStage: number };
 }
 

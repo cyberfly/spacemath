@@ -1,5 +1,5 @@
 import type { Profile } from '../models/Profile';
-import { createDefaultProfile } from '../models/Profile';
+import { createDefaultProfile, DEFAULT_AVATAR } from '../models/Profile';
 
 const PROFILES_KEY = 'spacemath_profiles';
 const PROFILE_PREFIX = 'spacemath_profile_';
@@ -48,7 +48,12 @@ export const StorageService = {
     const data = localStorage.getItem(PROFILE_PREFIX + id);
     if (!data) return null;
     try {
-      return JSON.parse(data);
+      const profile = JSON.parse(data) as Profile;
+      if (!profile.avatar) {
+        profile.avatar = DEFAULT_AVATAR;
+        this.saveProfile(profile);
+      }
+      return profile;
     } catch {
       return null;
     }
@@ -59,9 +64,9 @@ export const StorageService = {
     localStorage.setItem(PROFILE_PREFIX + profile.id, JSON.stringify(profile));
   },
 
-  createProfile(name: string): Profile {
+  createProfile(name: string, avatar: string = DEFAULT_AVATAR): Profile {
     const id = generateId();
-    const profile = createDefaultProfile(id, name);
+    const profile = createDefaultProfile(id, name, avatar);
 
     // Save the profile
     this.saveProfile(profile);

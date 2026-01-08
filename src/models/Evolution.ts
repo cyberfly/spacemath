@@ -6,13 +6,13 @@ export interface EvolutionStage {
 }
 
 export const EVOLUTION_STAGES: EvolutionStage[] = [
-  { id: 1, name: 'Egg', emoji: '🥚', xpRequired: 0 },
-  { id: 2, name: 'Hatchling', emoji: '🐣', xpRequired: 500 },
-  { id: 3, name: 'Baby Dragon', emoji: '🐉', xpRequired: 1500 },
-  { id: 4, name: 'Young Dragon', emoji: '🔥', xpRequired: 3500 },
-  { id: 5, name: 'Dragon', emoji: '🐲', xpRequired: 7000 },
-  { id: 6, name: 'Fire Dragon', emoji: '☄️', xpRequired: 12000 },
-  { id: 7, name: 'Star Dragon', emoji: '⭐', xpRequired: 20000 },
+  { id: 1, name: 'Starter Shuttle', emoji: '🛸', xpRequired: 0 },
+  { id: 2, name: 'Scout Rocket', emoji: '🚀', xpRequired: 500 },
+  { id: 3, name: 'Orbital Skimmer', emoji: '🛰️', xpRequired: 1500 },
+  { id: 4, name: 'Ion Spear', emoji: '☄️', xpRequired: 3500 },
+  { id: 5, name: 'Nova Striker', emoji: '✨', xpRequired: 7000 },
+  { id: 6, name: 'Starforged Cruiser', emoji: '🌌', xpRequired: 12000 },
+  { id: 7, name: 'Celestial Apex', emoji: '⭐', xpRequired: 20000 },
 ];
 
 export function getEvolutionStage(xp: number): number {

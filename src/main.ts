@@ -4,6 +4,7 @@ import { createGameConfig } from './game/config';
 import { StorageService } from './services/StorageService';
 import { EventBus } from './services/EventBus';
 import type { Profile, GameMode } from './models/Profile';
+import { DEFAULT_AVATAR } from './models/Profile';
 import {
   getEvolutionStage,
   getEvolutionByStage,
@@ -27,7 +28,10 @@ document.addEventListener('alpine:init', () => {
     profiles: [] as Profile[],
     currentProfile: null as Profile | null,
     newProfileName: '',
+    availableAvatars: ['🧑‍🚀', '👩‍🚀', '👨‍🚀', '🧑‍✈️', '🧑‍🔬', '🧑‍🚒'],
+    selectedAvatar: DEFAULT_AVATAR,
     gameMode: 'shoot' as GameMode,
+    selectedDifficulty: 1,
     evolutionData: { from: 1, to: 2 },
 
     // Game state (synced from Phaser)
@@ -39,6 +43,8 @@ document.addEventListener('alpine:init', () => {
       xpEarned: 0,
       currentEquation: '',
       typedAnswer: '',
+      lives: 3,
+      maxLives: 3,
     },
 
     // Phaser game instance
@@ -48,11 +54,22 @@ document.addEventListener('alpine:init', () => {
     init() {
       this.loadProfiles();
       this.setupEventListeners();
+      window.addEventListener('keydown', (event) => this.handleGlobalKeydown(event));
+
+      this.$watch('screen', (value) => {
+        if (value === 'gameover') {
+          this.$nextTick(() => {
+            const playAgainButton = (this.$refs as { playAgain?: HTMLButtonElement }).playAgain;
+            playAgainButton?.focus();
+          });
+        }
+      });
 
       // Check if there's an active profile
       const activeProfile = StorageService.getActiveProfile();
       if (activeProfile) {
         this.currentProfile = activeProfile;
+        this.selectedDifficulty = activeProfile.settings.difficulty || 1;
         this.screen = 'menu';
       }
     },
@@ -82,6 +99,10 @@ document.addEventListener('alpine:init', () => {
 
       EventBus.on('answer:wrong', () => {
         this.gameState.streak = 0;
+      });
+
+      EventBus.on('player:lives', (data) => {
+        this.gameState.lives = data.lives;
       });
 
       EventBus.on('game:over', (data) => {
@@ -122,6 +143,7 @@ document.addEventListener('alpine:init', () => {
       const profile = StorageService.getProfile(id);
       if (profile) {
         this.currentProfile = profile;
+        this.selectedDifficulty = profile.settings.difficulty || 1;
         StorageService.setActiveProfile(id);
         this.screen = 'menu';
       }
@@ -130,10 +152,12 @@ document.addEventListener('alpine:init', () => {
     createProfile() {
       if (!this.newProfileName.trim()) return;
 
-      const profile = StorageService.createProfile(this.newProfileName.trim());
+      const profile = StorageService.createProfile(this.newProfileName.trim(), this.selectedAvatar);
       this.profiles.push(profile);
       this.currentProfile = profile;
+      this.selectedDifficulty = profile.settings.difficulty || 1;
       this.newProfileName = '';
+      this.selectedAvatar = this.availableAvatars[0] || DEFAULT_AVATAR;
       this.screen = 'menu';
     },
 
@@ -156,6 +180,7 @@ document.addEventListener('alpine:init', () => {
 
     // Settings
     setDifficulty(level: number) {
+      this.selectedDifficulty = level;
       if (this.currentProfile) {
         this.currentProfile.settings.difficulty = level;
         this.saveProfile();
@@ -203,6 +228,8 @@ document.addEventListener('alpine:init', () => {
         xpEarned: 0,
         currentEquation: '',
         typedAnswer: '',
+        lives: 3,
+        maxLives: 3,
       };
 
       this.screen = 'game';
@@ -229,8 +256,10 @@ document.addEventListener('alpine:init', () => {
           this.game?.scale.resize(window.innerWidth, window.innerHeight);
           this.game?.scene.start('GameScene', {
             mode: this.gameMode,
-            difficulty: this.currentProfile?.settings.difficulty || 1,
+            difficulty: this.selectedDifficulty || 1,
             evolutionStage: this.currentProfile?.progress.evolutionStage || 1,
+            soundEnabled: this.currentProfile?.settings.soundEnabled ?? true,
+            musicEnabled: this.currentProfile?.settings.musicEnabled ?? true,
           });
 
           // Focus answer input for type mode
@@ -276,6 +305,25 @@ document.addEventListener('alpine:init', () => {
       if (!isNaN(answer)) {
         EventBus.emit('answer:submit', { answer });
         this.gameState.typedAnswer = '';
+      }
+    },
+
+    handleGlobalKeydown(event: KeyboardEvent) {
+      if (event.key !== 'Enter') return;
+
+      const target = event.target as HTMLElement | null;
+      const isAnswerInput = target?.id === 'answer-input';
+
+      if (this.screen === 'game') {
+        if (this.gameMode === 'type' && isAnswerInput) return;
+        event.preventDefault();
+        this.pauseGame();
+      } else if (this.screen === 'paused') {
+        event.preventDefault();
+        this.resumeGame();
+      } else if (this.screen === 'gameover') {
+        event.preventDefault();
+        this.playAgain();
       }
     },
 

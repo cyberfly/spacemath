@@ -2,6 +2,7 @@ import Phaser from 'phaser';
 import { EventBus } from '../../services/EventBus';
 import { MathGenerator } from '../../math/MathGenerator';
 import type { MathProblem } from '../../math/types';
+import { getEvolutionByStage } from '../../models/Evolution';
 
 interface EnemyData {
   container: Phaser.GameObjects.Container;
@@ -21,6 +22,18 @@ export class GameScene extends Phaser.Scene {
   private bullets: Phaser.GameObjects.Container[] = [];
   private stars: Phaser.GameObjects.Arc[] = [];
   private mothership: MothershipData | null = null;
+  private soundEnabled: boolean = true;
+  private musicEnabled: boolean = true;
+  private audioContext: AudioContext | null = null;
+  private backgroundMusicTimer: Phaser.Time.TimerEvent | null = null;
+  private backgroundMusicOscillators: OscillatorNode[] = [];
+  private backgroundMusicGain: GainNode | null = null;
+  private backgroundMusicLeadGain: GainNode | null = null;
+  private backgroundMusicBassGain: GainNode | null = null;
+  private backgroundMusicPadGain: GainNode | null = null;
+  private backgroundMusicStep: number = 0;
+  private jetOscillator: OscillatorNode | null = null;
+  private jetGain: GainNode | null = null;
 
   private mathGenerator!: MathGenerator;
   private currentProblem: MathProblem | null = null;
@@ -46,10 +59,12 @@ export class GameScene extends Phaser.Scene {
     super({ key: 'GameScene' });
   }
 
-  init(data: { mode: 'shoot' | 'type'; difficulty: number; evolutionStage: number }): void {
+  init(data: { mode: 'shoot' | 'type'; difficulty: number; evolutionStage: number; soundEnabled?: boolean; musicEnabled?: boolean }): void {
     this.gameMode = data.mode || 'shoot';
     this.difficulty = data.difficulty || 1;
     this.evolutionStage = data.evolutionStage || 1;
+    this.soundEnabled = data.soundEnabled ?? true;
+    this.musicEnabled = data.musicEnabled ?? true;
     this.score = 0;
     this.streak = 0;
     this.bestStreak = 0;
@@ -63,6 +78,230 @@ export class GameScene extends Phaser.Scene {
     this.bullets = [];
     this.stars = [];
     this.mothership = null;
+    this.emitLivesUpdate();
+  }
+
+  private getAudioContext(options?: { allowWithoutSound?: boolean }): AudioContext | null {
+    if (!options?.allowWithoutSound && !this.soundEnabled) return null;
+    if (!this.audioContext) {
+      const AudioContextConstructor =
+        window.AudioContext ||
+        (window as Window & { webkitAudioContext?: typeof AudioContext }).webkitAudioContext;
+      if (!AudioContextConstructor) return null;
+      this.audioContext = new AudioContextConstructor();
+    }
+    if (this.audioContext.state === 'suspended') {
+      void this.audioContext.resume();
+    }
+    return this.audioContext;
+  }
+
+  private playTone(frequency: number, durationMs: number, type: OscillatorType, volume: number): void {
+    const context = this.getAudioContext();
+    if (!context) return;
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, context.currentTime);
+    gain.gain.setValueAtTime(0, context.currentTime);
+    gain.gain.linearRampToValueAtTime(volume, context.currentTime + 0.01);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + durationMs / 1000);
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + durationMs / 1000);
+  }
+
+  private playSfx(kind: 'shoot' | 'correct' | 'wrong' | 'explode' | 'gameover'): void {
+    if (!this.soundEnabled) return;
+    switch (kind) {
+      case 'shoot':
+        this.playTone(640, 90, 'square', 0.08);
+        break;
+      case 'correct':
+        this.playTone(880, 140, 'triangle', 0.12);
+        break;
+      case 'wrong':
+        this.playTone(220, 180, 'sawtooth', 0.12);
+        break;
+      case 'explode':
+        this.playTone(140, 140, 'sawtooth', 0.1);
+        break;
+      case 'gameover':
+        this.playTone(120, 320, 'triangle', 0.1);
+        break;
+    }
+  }
+
+  private startBackgroundMusic(): void {
+    if (!this.musicEnabled || this.backgroundMusicGain) return;
+    const context = this.getAudioContext({ allowWithoutSound: true });
+    if (!context) return;
+
+    const master = context.createGain();
+    master.gain.setValueAtTime(0.0001, context.currentTime);
+    master.gain.linearRampToValueAtTime(0.12, context.currentTime + 0.6);
+    master.connect(context.destination);
+
+    const leadGain = context.createGain();
+    leadGain.gain.setValueAtTime(0.0001, context.currentTime);
+    leadGain.connect(master);
+
+    const bassGain = context.createGain();
+    bassGain.gain.setValueAtTime(0.25, context.currentTime);
+    bassGain.connect(master);
+
+    const padGain = context.createGain();
+    padGain.gain.setValueAtTime(0.18, context.currentTime);
+    padGain.connect(master);
+
+    const lead = context.createOscillator();
+    const bass = context.createOscillator();
+    const pad = context.createOscillator();
+    lead.type = 'square';
+    bass.type = 'triangle';
+    pad.type = 'sawtooth';
+    lead.connect(leadGain);
+    bass.connect(bassGain);
+    pad.connect(padGain);
+    lead.start();
+    bass.start();
+    pad.start();
+
+    this.backgroundMusicGain = master;
+    this.backgroundMusicLeadGain = leadGain;
+    this.backgroundMusicBassGain = bassGain;
+    this.backgroundMusicPadGain = padGain;
+    this.backgroundMusicOscillators = [lead, bass, pad];
+    this.backgroundMusicStep = 0;
+    this.advanceBackgroundMusic();
+    this.backgroundMusicTimer = this.time.addEvent({
+      delay: 180,
+      loop: true,
+      callback: () => this.advanceBackgroundMusic(),
+    });
+  }
+
+  private noteFrequency(base: number, semitoneOffset: number): number {
+    return base * Math.pow(2, semitoneOffset / 12);
+  }
+
+  private advanceBackgroundMusic(): void {
+    if (!this.backgroundMusicGain || this.backgroundMusicOscillators.length < 3) return;
+    const context = this.getAudioContext({ allowWithoutSound: true });
+    if (!context) return;
+
+    const now = context.currentTime;
+    const step = this.backgroundMusicStep;
+    const lead = this.backgroundMusicOscillators[0];
+    const bass = this.backgroundMusicOscillators[1];
+    const pad = this.backgroundMusicOscillators[2];
+
+    const leadPattern = [0, 7, 10, 12, 10, 7, 5, 3, 0, 7, 12, 15, 12, 10, 7, 5];
+    const bassPattern = [0, 0, -5, -5, -7, -7, -10, -10];
+    const padChords = [
+      [0, 7, 10],
+      [-5, 0, 7],
+      [-7, -3, 5],
+      [-10, -5, 2],
+    ];
+
+    const leadNote = leadPattern[step % leadPattern.length];
+    const bassNote = bassPattern[Math.floor(step / 2) % bassPattern.length];
+    const chord = padChords[Math.floor(step / 4) % padChords.length];
+
+    lead.frequency.setValueAtTime(this.noteFrequency(220, leadNote), now);
+    bass.frequency.setValueAtTime(this.noteFrequency(110, bassNote), now);
+
+    const padPitch = this.noteFrequency(174.61, chord[step % chord.length]);
+    pad.frequency.setValueAtTime(padPitch, now);
+
+    if (this.backgroundMusicLeadGain) {
+      this.backgroundMusicLeadGain.gain.cancelScheduledValues(now);
+      this.backgroundMusicLeadGain.gain.setValueAtTime(0.0001, now);
+      this.backgroundMusicLeadGain.gain.linearRampToValueAtTime(0.25, now + 0.02);
+      this.backgroundMusicLeadGain.gain.exponentialRampToValueAtTime(0.0001, now + 0.14);
+    }
+
+    this.backgroundMusicStep += 1;
+  }
+
+  private stopBackgroundMusic(): void {
+    this.backgroundMusicTimer?.remove(false);
+    this.backgroundMusicTimer = null;
+
+    if (this.backgroundMusicGain && this.audioContext) {
+      this.backgroundMusicGain.gain.cancelScheduledValues(this.audioContext.currentTime);
+      this.backgroundMusicGain.gain.linearRampToValueAtTime(0.0001, this.audioContext.currentTime + 0.2);
+    }
+
+    this.backgroundMusicOscillators.forEach((osc) => {
+      try {
+        osc.stop();
+      } catch {
+        // Oscillator may already be stopped.
+      }
+      osc.disconnect();
+    });
+    this.backgroundMusicOscillators = [];
+
+    this.backgroundMusicLeadGain?.disconnect();
+    this.backgroundMusicBassGain?.disconnect();
+    this.backgroundMusicPadGain?.disconnect();
+    this.backgroundMusicLeadGain = null;
+    this.backgroundMusicBassGain = null;
+    this.backgroundMusicPadGain = null;
+    this.backgroundMusicGain?.disconnect();
+    this.backgroundMusicGain = null;
+  }
+
+  private initJetSound(): void {
+    if (!this.soundEnabled || this.jetGain) return;
+    const context = this.getAudioContext();
+    if (!context) return;
+
+    const gain = context.createGain();
+    gain.gain.setValueAtTime(0.0001, context.currentTime);
+    gain.connect(context.destination);
+
+    const osc = context.createOscillator();
+    osc.type = 'sawtooth';
+    osc.frequency.setValueAtTime(90, context.currentTime);
+    osc.connect(gain);
+    osc.start();
+
+    this.jetGain = gain;
+    this.jetOscillator = osc;
+  }
+
+  private setJetThrust(active: boolean): void {
+    if (!this.soundEnabled || !this.jetGain || !this.audioContext) return;
+    const now = this.audioContext.currentTime;
+    this.jetGain.gain.cancelScheduledValues(now);
+    this.jetGain.gain.setTargetAtTime(active ? 0.05 : 0.0001, now, 0.05);
+    if (this.jetOscillator) {
+      this.jetOscillator.frequency.setTargetAtTime(active ? 140 : 90, now, 0.08);
+    }
+  }
+
+  private stopJetSound(): void {
+    if (this.jetGain && this.audioContext) {
+      this.jetGain.gain.cancelScheduledValues(this.audioContext.currentTime);
+      this.jetGain.gain.setValueAtTime(0.0001, this.audioContext.currentTime);
+    }
+    if (this.jetOscillator) {
+      try {
+        this.jetOscillator.stop();
+      } catch {
+        // Oscillator may already be stopped.
+      }
+      this.jetOscillator.disconnect();
+      this.jetOscillator = null;
+    }
+    this.jetGain?.disconnect();
+    this.jetGain = null;
   }
 
   create(): void {
@@ -78,6 +317,9 @@ export class GameScene extends Phaser.Scene {
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
     }
+
+    this.startBackgroundMusic();
+    this.initJetSound();
 
     // Setup event listeners
     this.setupEventListeners();
@@ -105,16 +347,93 @@ export class GameScene extends Phaser.Scene {
   }
 
   private getEvolutionEmoji(): string {
-    const emojis: { [key: number]: string } = {
-      1: '🥚',      // Egg
-      2: '🐣',      // Hatchling
-      3: '🐉',      // Baby Dragon
-      4: '🔥',      // Young Dragon
-      5: '🐲',      // Dragon
-      6: '☄️',      // Fire Dragon
-      7: '⭐',      // Star Dragon
-    };
-    return emojis[this.evolutionStage] || '🥚';
+    return getEvolutionByStage(this.evolutionStage).emoji;
+  }
+
+  private getShipStyle(): {
+    glow: number;
+    body: number;
+    detail: number;
+    cockpit: number;
+    cockpitCore: number;
+    outline: number;
+    fin: number;
+    flame: number;
+  } {
+    const styles = [
+      {
+        glow: 0x22d3ee,
+        body: 0x06b6d4,
+        detail: 0x0891b2,
+        cockpit: 0xfbbf24,
+        cockpitCore: 0xfef3c7,
+        outline: 0x22d3ee,
+        fin: 0x0ea5e9,
+        flame: 0xfbbf24,
+      },
+      {
+        glow: 0x38bdf8,
+        body: 0x0ea5e9,
+        detail: 0x0284c7,
+        cockpit: 0xfbbf24,
+        cockpitCore: 0xfef3c7,
+        outline: 0x38bdf8,
+        fin: 0x0ea5e9,
+        flame: 0xf97316,
+      },
+      {
+        glow: 0x4ade80,
+        body: 0x22c55e,
+        detail: 0x15803d,
+        cockpit: 0xfacc15,
+        cockpitCore: 0xfef9c3,
+        outline: 0x4ade80,
+        fin: 0x16a34a,
+        flame: 0xf59e0b,
+      },
+      {
+        glow: 0xf97316,
+        body: 0xea580c,
+        detail: 0xc2410c,
+        cockpit: 0x38bdf8,
+        cockpitCore: 0xe0f2fe,
+        outline: 0xfb923c,
+        fin: 0xf97316,
+        flame: 0xfbbf24,
+      },
+      {
+        glow: 0xa78bfa,
+        body: 0x8b5cf6,
+        detail: 0x6d28d9,
+        cockpit: 0xfacc15,
+        cockpitCore: 0xfef9c3,
+        outline: 0xc4b5fd,
+        fin: 0x8b5cf6,
+        flame: 0xf97316,
+      },
+      {
+        glow: 0xfacc15,
+        body: 0xf59e0b,
+        detail: 0xb45309,
+        cockpit: 0x22d3ee,
+        cockpitCore: 0xe0f2fe,
+        outline: 0xfcd34d,
+        fin: 0xf59e0b,
+        flame: 0xf43f5e,
+      },
+      {
+        glow: 0x38bdf8,
+        body: 0x0f172a,
+        detail: 0x1e293b,
+        cockpit: 0xfacc15,
+        cockpitCore: 0xfef9c3,
+        outline: 0x38bdf8,
+        fin: 0x22d3ee,
+        flame: 0xf59e0b,
+      },
+    ];
+
+    return styles[Math.min(this.evolutionStage, styles.length) - 1];
   }
 
   private createPlayer(): void {
@@ -125,15 +444,17 @@ export class GameScene extends Phaser.Scene {
     const playerY = height - 120;
     this.player = this.add.container(width / 2, playerY);
 
+    const style = this.getShipStyle();
+
     // Create a visible ship shape
     const ship = this.add.graphics();
 
     // Outer glow
-    ship.fillStyle(0x22d3ee, 0.3);
+    ship.fillStyle(style.glow, 0.3);
     ship.fillCircle(0, 0, 55);
 
     // Main body - cyan colored ship pointing up
-    ship.fillStyle(0x06b6d4);
+    ship.fillStyle(style.body);
     ship.beginPath();
     ship.moveTo(0, -40);      // Top point
     ship.lineTo(35, 35);      // Bottom right
@@ -142,7 +463,7 @@ export class GameScene extends Phaser.Scene {
     ship.fillPath();
 
     // Inner detail
-    ship.fillStyle(0x0891b2);
+    ship.fillStyle(style.detail);
     ship.beginPath();
     ship.moveTo(0, -25);
     ship.lineTo(20, 25);
@@ -150,14 +471,31 @@ export class GameScene extends Phaser.Scene {
     ship.closePath();
     ship.fillPath();
 
+    if (this.evolutionStage >= 3) {
+      ship.fillStyle(style.fin);
+      ship.fillTriangle(-35, 10, -60, 35, -20, 30);
+      ship.fillTriangle(35, 10, 60, 35, 20, 30);
+    }
+
     // Cockpit
-    ship.fillStyle(0xfbbf24);
+    ship.fillStyle(style.cockpit);
     ship.fillCircle(0, 5, 12);
-    ship.fillStyle(0xfef3c7);
+    ship.fillStyle(style.cockpitCore);
     ship.fillCircle(0, 5, 6);
 
+    if (this.evolutionStage >= 5) {
+      ship.fillStyle(style.flame);
+      ship.fillTriangle(0, 40, -8, 58, 8, 58);
+    }
+
+    if (this.evolutionStage >= 6) {
+      ship.fillStyle(style.flame);
+      ship.fillTriangle(-20, 35, -30, 52, -10, 50);
+      ship.fillTriangle(20, 35, 30, 52, 10, 50);
+    }
+
     // Glow outline
-    ship.lineStyle(3, 0x22d3ee, 1);
+    ship.lineStyle(3, style.outline, 1);
     ship.beginPath();
     ship.moveTo(0, -40);
     ship.lineTo(35, 35);
@@ -195,55 +533,58 @@ export class GameScene extends Phaser.Scene {
     const width = this.cameras.main.width;
     const container = this.add.container(width / 2, 70);
 
-    // Draw mothership body - large hexagonal shape
+    // Draw alien mothership - monster head silhouette
     const ship = this.add.graphics();
 
-    // Main body - dark purple/red
-    ship.fillStyle(0x8b0000); // Dark red
+    // Aura glow
+    ship.fillStyle(0x22c55e, 0.18);
+    ship.fillCircle(0, 0, 70);
+
+    // Main head
+    ship.fillStyle(0x14532d);
+    ship.fillEllipse(0, 0, 170, 90);
+
+    // Forehead ridge
+    ship.fillStyle(0x166534);
+    ship.fillEllipse(0, -12, 140, 45);
+
+    // Horns
+    ship.fillStyle(0x0f172a);
     ship.beginPath();
-    ship.moveTo(-80, 0);      // Left point
-    ship.lineTo(-50, -30);    // Upper left
-    ship.lineTo(50, -30);     // Upper right
-    ship.lineTo(80, 0);       // Right point
-    ship.lineTo(50, 30);      // Lower right
-    ship.lineTo(-50, 30);     // Lower left
+    ship.moveTo(-55, -35);
+    ship.lineTo(-85, -70);
+    ship.lineTo(-35, -50);
+    ship.closePath();
+    ship.fillPath();
+    ship.beginPath();
+    ship.moveTo(55, -35);
+    ship.lineTo(85, -70);
+    ship.lineTo(35, -50);
     ship.closePath();
     ship.fillPath();
 
-    // Inner detail - darker
-    ship.fillStyle(0x4a0000);
-    ship.beginPath();
-    ship.moveTo(-60, 0);
-    ship.lineTo(-35, -20);
-    ship.lineTo(35, -20);
-    ship.lineTo(60, 0);
-    ship.lineTo(35, 20);
-    ship.lineTo(-35, 20);
-    ship.closePath();
-    ship.fillPath();
+    // Eyes
+    ship.fillStyle(0xf97316);
+    ship.fillEllipse(-35, -5, 26, 18);
+    ship.fillEllipse(35, -5, 26, 18);
+    ship.fillStyle(0x111827);
+    ship.fillCircle(-35, -5, 6);
+    ship.fillCircle(35, -5, 6);
+    ship.fillStyle(0xfef3c7);
+    ship.fillCircle(-32, -8, 3);
+    ship.fillCircle(38, -8, 3);
 
-    // Cockpit area
-    ship.fillStyle(0xff4444);
-    ship.fillCircle(0, 0, 15);
-    ship.fillStyle(0xffff00);
-    ship.fillCircle(0, 0, 8);
+    // Mouth
+    ship.fillStyle(0x7f1d1d);
+    ship.fillRoundedRect(-40, 20, 80, 20, 8);
+    ship.fillStyle(0xf8fafc);
+    ship.fillTriangle(-30, 20, -24, 34, -18, 20);
+    ship.fillTriangle(-6, 20, 0, 34, 6, 20);
+    ship.fillTriangle(18, 20, 24, 34, 30, 20);
 
-    // Side cannons
-    ship.fillStyle(0x666666);
-    ship.fillRect(-90, -8, 20, 16);
-    ship.fillRect(70, -8, 20, 16);
-
-    // Glow outline
-    ship.lineStyle(2, 0xff0000, 0.8);
-    ship.beginPath();
-    ship.moveTo(-80, 0);
-    ship.lineTo(-50, -30);
-    ship.lineTo(50, -30);
-    ship.lineTo(80, 0);
-    ship.lineTo(50, 30);
-    ship.lineTo(-50, 30);
-    ship.closePath();
-    ship.strokePath();
+    // Outline
+    ship.lineStyle(2, 0x4ade80, 0.7);
+    ship.strokeEllipse(0, 0, 170, 90);
 
     container.add(ship);
 
@@ -276,11 +617,15 @@ export class GameScene extends Phaser.Scene {
     // Listen for pause/resume
     EventBus.on('game:pause', () => {
       this.isPaused = true;
+      this.setJetThrust(false);
+      this.stopBackgroundMusic();
       this.scene.pause();
     });
 
     EventBus.on('game:resume', () => {
       this.isPaused = false;
+      this.startBackgroundMusic();
+      this.initJetSound();
       this.scene.resume();
     });
 
@@ -437,6 +782,7 @@ export class GameScene extends Phaser.Scene {
     const now = Date.now();
     if (now - this.lastFireTime < this.fireDelay) return;
     this.lastFireTime = now;
+    this.playSfx('shoot');
 
     const bullet = this.add.container(this.player.x, this.player.y - 30);
 
@@ -528,6 +874,7 @@ export class GameScene extends Phaser.Scene {
 
     EventBus.emit('answer:correct', { xp, streak: this.streak });
     EventBus.emit('score:update', { score: this.score, streak: this.streak });
+    this.playSfx('correct');
 
     // Generate new problem after delay
     this.time.delayedCall(800, () => {
@@ -540,9 +887,11 @@ export class GameScene extends Phaser.Scene {
   private handleWrongAnswer(): void {
     this.streak = 0;
     this.playerLives--;
+    this.emitLivesUpdate();
 
     EventBus.emit('answer:wrong', undefined);
     EventBus.emit('score:update', { score: this.score, streak: this.streak });
+    this.playSfx('wrong');
 
     // Flash screen red
     this.cameras.main.flash(300, 255, 50, 50);
@@ -553,6 +902,7 @@ export class GameScene extends Phaser.Scene {
   }
 
   private createExplosion(x: number, y: number): void {
+    this.playSfx('explode');
     // Create particle explosion effect
     for (let i = 0; i < 12; i++) {
       const particle = this.add.circle(x, y, 4, 0xfbbf24);
@@ -575,6 +925,9 @@ export class GameScene extends Phaser.Scene {
 
   private gameOver(): void {
     this.isGameOver = true;
+    this.stopBackgroundMusic();
+    this.setJetThrust(false);
+    this.playSfx('gameover');
 
     EventBus.emit('game:over', {
       score: this.score,
@@ -588,6 +941,12 @@ export class GameScene extends Phaser.Scene {
     this.clearEnemies();
     this.bullets.forEach(b => b.destroy());
     this.bullets = [];
+    this.stopBackgroundMusic();
+    this.stopJetSound();
+  }
+
+  private emitLivesUpdate(): void {
+    EventBus.emit('player:lives', { lives: this.playerLives });
   }
 
   update(): void {
@@ -597,6 +956,7 @@ export class GameScene extends Phaser.Scene {
     if (this.cursors) {
       const body = this.player.body as Phaser.Physics.Arcade.Body;
       const speed = 350;
+      const isMoving = this.cursors.left.isDown || this.cursors.right.isDown;
 
       if (this.cursors.left.isDown) {
         body.setVelocityX(-speed);
@@ -605,6 +965,7 @@ export class GameScene extends Phaser.Scene {
       } else {
         body.setVelocityX(0);
       }
+      this.setJetThrust(isMoving);
 
       // Fire with space (shoot mode only)
       if (this.gameMode === 'shoot' && this.cursors.space?.isDown) {
