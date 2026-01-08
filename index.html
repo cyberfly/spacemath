@@ -1,0 +1,246 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🚀</text></svg>" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+    <title>SpaceMath - Learn Math While Having Fun!</title>
+    <link rel="stylesheet" href="/src/styles/main.css" />
+  </head>
+  <body x-data="app" x-cloak>
+    <!-- Profile Selection Screen -->
+    <div x-show="screen === 'profiles'" class="screen profiles-screen">
+      <h1 class="game-title">SpaceMath</h1>
+      <p class="subtitle">Choose Your Pilot!</p>
+
+      <div class="profiles-grid">
+        <template x-for="profile in profiles" :key="profile.id">
+          <button class="profile-card" @click="selectProfile(profile.id)">
+            <div class="profile-avatar" x-text="getEvolutionEmoji(profile.progress.evolutionStage)"></div>
+            <div class="profile-name" x-text="profile.name"></div>
+            <div class="profile-xp">XP: <span x-text="profile.progress.xp"></span></div>
+          </button>
+        </template>
+
+        <button class="profile-card add-profile" @click="screen = 'create-profile'" x-show="profiles.length < 4">
+          <div class="profile-avatar">➕</div>
+          <div class="profile-name">New Pilot</div>
+        </button>
+      </div>
+    </div>
+
+    <!-- Create Profile Screen -->
+    <div x-show="screen === 'create-profile'" class="screen create-profile-screen">
+      <h2>Create New Pilot</h2>
+      <form @submit.prevent="createProfile">
+        <div class="form-group">
+          <label for="pilot-name">Pilot Name:</label>
+          <input
+            type="text"
+            id="pilot-name"
+            x-model="newProfileName"
+            placeholder="Enter your name"
+            maxlength="12"
+            required
+          />
+        </div>
+        <div class="button-row">
+          <button type="button" class="btn btn-secondary" @click="screen = 'profiles'">Back</button>
+          <button type="submit" class="btn btn-primary">Create!</button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Main Menu Screen -->
+    <div x-show="screen === 'menu'" class="screen menu-screen">
+      <div class="menu-header">
+        <div class="player-info">
+          <span class="player-avatar" x-text="currentProfile ? getEvolutionEmoji(currentProfile.progress.evolutionStage) : ''"></span>
+          <span class="player-name" x-text="currentProfile?.name"></span>
+        </div>
+        <div class="player-stats">
+          <div class="stat">
+            <span class="stat-label">XP</span>
+            <span class="stat-value" x-text="currentProfile?.progress.xp || 0"></span>
+          </div>
+          <div class="stat">
+            <span class="stat-label">Stage</span>
+            <span class="stat-value" x-text="getEvolutionName(currentProfile?.progress.evolutionStage || 1)"></span>
+          </div>
+        </div>
+      </div>
+
+      <h1 class="game-title">SpaceMath</h1>
+
+      <div class="menu-buttons">
+        <button class="btn btn-large btn-primary" @click="startGame('shoot')">
+          🎯 Shoot the Answer
+        </button>
+        <button class="btn btn-large btn-primary" @click="startGame('type')">
+          ⌨️ Type to Fire
+        </button>
+        <button class="btn btn-large btn-secondary" @click="screen = 'settings'">
+          ⚙️ Settings
+        </button>
+        <button class="btn btn-large btn-secondary" @click="screen = 'profiles'">
+          👥 Switch Pilot
+        </button>
+      </div>
+
+      <div class="evolution-progress">
+        <p class="evolution-label">Evolution Progress</p>
+        <div class="progress-bar">
+          <div class="progress-fill" :style="`width: ${getEvolutionProgress()}%`"></div>
+        </div>
+        <p class="evolution-next">
+          <span x-text="getXPToNextEvolution()"></span> XP to next evolution!
+        </p>
+      </div>
+    </div>
+
+    <!-- Settings Screen -->
+    <div x-show="screen === 'settings'" class="screen settings-screen">
+      <h2>Settings</h2>
+
+      <div class="settings-group">
+        <label>Difficulty Level</label>
+        <div class="difficulty-selector">
+          <template x-for="level in [1,2,3,4,5]" :key="level">
+            <button
+              class="difficulty-btn"
+              :class="{ active: currentProfile?.settings.difficulty === level }"
+              @click="setDifficulty(level)"
+            >
+              <span x-text="getDifficultyLabel(level)"></span>
+            </button>
+          </template>
+        </div>
+      </div>
+
+      <div class="settings-group" x-show="currentProfile">
+        <label class="toggle-label">
+          <span>Sound Effects</span>
+          <input type="checkbox" :checked="currentProfile?.settings?.soundEnabled" @change="currentProfile.settings.soundEnabled = $event.target.checked; saveProfile()" />
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
+      <div class="settings-group" x-show="currentProfile">
+        <label class="toggle-label">
+          <span>Music</span>
+          <input type="checkbox" :checked="currentProfile?.settings?.musicEnabled" @change="currentProfile.settings.musicEnabled = $event.target.checked; saveProfile()" />
+          <span class="toggle-switch"></span>
+        </label>
+      </div>
+
+      <div class="settings-group danger-zone">
+        <button class="btn btn-danger" @click="confirmDeleteProfile()">Delete This Pilot</button>
+      </div>
+
+      <button class="btn btn-primary" @click="screen = 'menu'">Back to Menu</button>
+    </div>
+
+    <!-- Game Container -->
+    <div x-show="screen === 'game'" class="screen game-screen">
+      <div id="game-container"></div>
+
+      <!-- HUD Overlay -->
+      <div class="game-hud" x-show="screen === 'game'">
+        <div class="hud-left">
+          <div class="hud-item">
+            <span class="hud-label">Score</span>
+            <span class="hud-value" x-text="gameState.score"></span>
+          </div>
+          <div class="hud-item">
+            <span class="hud-label">Streak</span>
+            <span class="hud-value" x-text="gameState.streak"></span>
+          </div>
+        </div>
+        <div class="hud-center">
+          <!-- Equation shown in mothership for shoot mode, only display here for type mode -->
+          <div class="equation-display" x-show="gameMode === 'type' && gameState.currentEquation" x-text="gameState.currentEquation"></div>
+        </div>
+        <div class="hud-right">
+          <button class="btn-icon" @click="pauseGame()">⏸️</button>
+        </div>
+      </div>
+
+      <!-- Type Mode Input -->
+      <div class="type-input-container" x-show="screen === 'game' && gameMode === 'type'">
+        <input
+          type="number"
+          id="answer-input"
+          x-model="gameState.typedAnswer"
+          @keyup.enter="submitAnswer()"
+          placeholder="?"
+          inputmode="numeric"
+          pattern="[0-9]*"
+        />
+        <button class="btn btn-primary" @click="submitAnswer()">Fire!</button>
+      </div>
+    </div>
+
+    <!-- Pause Screen -->
+    <div x-show="screen === 'paused'" class="screen pause-screen overlay">
+      <div class="pause-modal">
+        <h2>Paused</h2>
+        <div class="pause-stats">
+          <p>Score: <span x-text="gameState.score"></span></p>
+          <p>Correct: <span x-text="gameState.correct"></span></p>
+          <p>Streak: <span x-text="gameState.streak"></span></p>
+        </div>
+        <div class="button-row">
+          <button class="btn btn-primary" @click="resumeGame()">Resume</button>
+          <button class="btn btn-secondary" @click="quitGame()">Quit</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Game Over Screen -->
+    <div x-show="screen === 'gameover'" class="screen gameover-screen overlay">
+      <div class="gameover-modal">
+        <h2>Game Over!</h2>
+        <div class="gameover-stats">
+          <div class="stat-row">
+            <span>Score</span>
+            <span x-text="gameState.score"></span>
+          </div>
+          <div class="stat-row">
+            <span>Correct Answers</span>
+            <span x-text="gameState.correct"></span>
+          </div>
+          <div class="stat-row">
+            <span>Best Streak</span>
+            <span x-text="gameState.bestStreak"></span>
+          </div>
+          <div class="stat-row highlight">
+            <span>XP Earned</span>
+            <span>+<span x-text="gameState.xpEarned"></span></span>
+          </div>
+        </div>
+        <div class="button-row">
+          <button class="btn btn-primary" @click="playAgain()">Play Again</button>
+          <button class="btn btn-secondary" @click="screen = 'menu'">Menu</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Evolution Screen -->
+    <div x-show="screen === 'evolution'" class="screen evolution-screen overlay">
+      <div class="evolution-modal">
+        <h2>EVOLUTION!</h2>
+        <div class="evolution-animation">
+          <div class="old-form" x-text="getEvolutionEmoji(evolutionData.from)"></div>
+          <div class="arrow">➡️</div>
+          <div class="new-form" x-text="getEvolutionEmoji(evolutionData.to)"></div>
+        </div>
+        <p class="evolution-message">
+          You evolved into a <span x-text="getEvolutionName(evolutionData.to)"></span>!
+        </p>
+        <button class="btn btn-primary btn-large" @click="closeEvolution()">Awesome!</button>
+      </div>
+    </div>
+
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
