@@ -563,6 +563,7 @@ h2 {
   flex-direction: column;
   gap: 12px;
   align-items: flex-end;
+  pointer-events: none;
 }
 
 .hud-hint {
@@ -735,9 +736,11 @@ h2 {
   }
 
   .hud-corner {
-    right: 10px;
+    left: 10px;
+    right: auto;
     bottom: 10px;
     gap: 8px;
+    align-items: flex-start;
   }
 
   .hud-hint {
@@ -748,10 +751,18 @@ h2 {
   }
 
   .hud-item {
-    padding: 6px 12px;
+    padding: 4px 8px;
   }
 
   .hp-bar {
-    width: 110px;
+    width: 90px;
+  }
+
+  .hud-value {
+    font-size: 1rem;
+  }
+
+  .hud-label {
+    font-size: 0.6rem;
   }
 }
