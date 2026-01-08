@@ -738,9 +738,12 @@ h2 {
   .hud-corner {
     left: 10px;
     right: auto;
-    bottom: 10px;
-    gap: 8px;
-    align-items: flex-start;
+    top: 10px;
+    bottom: auto;
+    flex-direction: row;
+    flex-wrap: nowrap;
+    gap: 6px;
+    align-items: center;
   }
 
   .hud-hint {
@@ -750,19 +753,39 @@ h2 {
     padding: 6px 10px;
   }
 
-  .hud-item {
+  .hud-player {
     padding: 4px 8px;
+    gap: 6px;
+  }
+
+  .hud-avatar {
+    font-size: 1.2rem;
+  }
+
+  .hud-name {
+    font-size: 0.8rem;
+  }
+
+  .hud-item {
+    padding: 4px 6px;
+    flex-direction: row;
+    gap: 6px;
   }
 
   .hp-bar {
-    width: 90px;
+    width: 60px;
+    height: 6px;
   }
 
   .hud-value {
-    font-size: 1rem;
+    font-size: 0.9rem;
   }
 
   .hud-label {
-    font-size: 0.6rem;
+    font-size: 0.55rem;
+  }
+
+  .hp-text {
+    font-size: 0.65rem;
   }
 }
