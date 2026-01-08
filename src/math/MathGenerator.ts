@@ -8,13 +8,6 @@ const DIFFICULTY_CONFIGS: DifficultyConfig[] = [
   { level: 5, operations: ['addition', 'subtraction', 'multiplication', 'division'], maxNumber: 100, maxMultiplier: 12 },
 ];
 
-const OPERATION_SYMBOLS: Record<MathOperation, string> = {
-  addition: '+',
-  subtraction: '-',
-  multiplication: '×',
-  division: '÷',
-};
-
 function randomInt(min: number, max: number): number {
   return Math.floor(Math.random() * (max - min + 1)) + min;
 }

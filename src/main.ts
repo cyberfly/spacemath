@@ -51,12 +51,12 @@ document.addEventListener('alpine:init', () => {
     game: null as Phaser.Game | null,
 
     // Initialize
-    init() {
+    init(this: any) {
       this.loadProfiles();
       this.setupEventListeners();
       window.addEventListener('keydown', (event) => this.handleGlobalKeydown(event));
 
-      this.$watch('screen', (value) => {
+      this.$watch('screen', (value: string) => {
         if (value === 'gameover') {
           this.$nextTick(() => {
             const playAgainButton = (this.$refs as { playAgain?: HTMLButtonElement }).playAgain;
@@ -218,7 +218,7 @@ document.addEventListener('alpine:init', () => {
     },
 
     // Game control
-    startGame(mode: GameMode) {
+    startGame(this: any, mode: GameMode) {
       this.gameMode = mode;
       this.gameState = {
         score: 0,

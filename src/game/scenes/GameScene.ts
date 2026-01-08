@@ -827,11 +827,9 @@ export class GameScene extends Phaser.Scene {
   private checkBulletEnemyCollision(): void {
     for (let i = this.bullets.length - 1; i >= 0; i--) {
       const bullet = this.bullets[i];
-      const bulletBody = bullet.body as Phaser.Physics.Arcade.Body;
 
       for (let j = this.enemies.length - 1; j >= 0; j--) {
         const enemy = this.enemies[j];
-        const enemyBody = enemy.container.body as Phaser.Physics.Arcade.Body;
 
         // Simple collision check
         const dx = bullet.x - enemy.container.x;
