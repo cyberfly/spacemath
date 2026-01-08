@@ -171,6 +171,9 @@
             <button class="btn-icon" @click="pauseGame()">⏸️</button>
           </div>
         </div>
+        <div class="hud-hint" x-show="gameMode === 'shoot' && isTouchDevice">
+          Touch + drag to move, tap to shoot. Keyboard: Left/Right + Space.
+        </div>
         <div class="hud-corner">
           <div class="hud-player" x-show="currentProfile">
             <span class="hud-avatar" x-text="currentProfile?.avatar || ''"></span>

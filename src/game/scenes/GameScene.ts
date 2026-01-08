@@ -55,6 +55,11 @@ export class GameScene extends Phaser.Scene {
 
   private lastFireTime: number = 0;
   private fireDelay: number = 250;
+  private touchTargetX: number | null = null;
+  private touchActive: boolean = false;
+  private touchStartX: number = 0;
+  private touchStartY: number = 0;
+  private touchMoved: boolean = false;
 
   constructor() {
     super({ key: 'GameScene' });
@@ -335,6 +340,7 @@ export class GameScene extends Phaser.Scene {
     if (this.input.keyboard) {
       this.cursors = this.input.keyboard.createCursorKeys();
     }
+    this.setupTouchInput();
 
     this.startBackgroundMusic();
     this.initJetSound();
@@ -345,6 +351,45 @@ export class GameScene extends Phaser.Scene {
     // Generate first problem after a short delay
     this.time.delayedCall(500, () => {
       this.generateNewProblem();
+    });
+  }
+
+  private setupTouchInput(): void {
+    this.input.on('pointerdown', (pointer: Phaser.Input.Pointer) => {
+      if (this.isGameOver || this.isPaused) return;
+      this.touchActive = true;
+      this.touchTargetX = pointer.x;
+      this.touchStartX = pointer.x;
+      this.touchStartY = pointer.y;
+      this.touchMoved = false;
+    });
+
+    this.input.on('pointermove', (pointer: Phaser.Input.Pointer) => {
+      if (!this.touchActive) return;
+      this.touchTargetX = pointer.x;
+      const movedDistance = Phaser.Math.Distance.Between(
+        this.touchStartX,
+        this.touchStartY,
+        pointer.x,
+        pointer.y
+      );
+      if (movedDistance > 10) {
+        this.touchMoved = true;
+      }
+    });
+
+    this.input.on('pointerup', () => {
+      if (this.gameMode === 'shoot' && !this.touchMoved) {
+        this.fire();
+      }
+      this.touchActive = false;
+      this.touchTargetX = null;
+      this.touchMoved = false;
+      const body = this.player?.body as Phaser.Physics.Arcade.Body | undefined;
+      if (body) {
+        body.setVelocityX(0);
+      }
+      this.setJetThrust(false);
     });
   }
 
@@ -969,22 +1014,35 @@ export class GameScene extends Phaser.Scene {
     if (this.isGameOver || this.isPaused) return;
 
     // Player movement
-    if (this.cursors) {
+    if (this.cursors || this.touchActive) {
       const body = this.player.body as Phaser.Physics.Arcade.Body;
       const speed = 350;
-      const isMoving = this.cursors.left.isDown || this.cursors.right.isDown;
+      let isMoving = false;
 
-      if (this.cursors.left.isDown) {
-        body.setVelocityX(-speed);
-      } else if (this.cursors.right.isDown) {
-        body.setVelocityX(speed);
-      } else {
-        body.setVelocityX(0);
+      if (this.touchActive && this.touchTargetX !== null) {
+        const delta = this.touchTargetX - this.player.x;
+        if (Math.abs(delta) > 6) {
+          body.setVelocityX(Math.sign(delta) * speed);
+          isMoving = true;
+        } else {
+          body.setVelocityX(0);
+        }
+      } else if (this.cursors) {
+        isMoving = this.cursors.left.isDown || this.cursors.right.isDown;
+
+        if (this.cursors.left.isDown) {
+          body.setVelocityX(-speed);
+        } else if (this.cursors.right.isDown) {
+          body.setVelocityX(speed);
+        } else {
+          body.setVelocityX(0);
+        }
       }
+
       this.setJetThrust(isMoving);
 
       // Fire with space (shoot mode only)
-      if (this.gameMode === 'shoot' && this.cursors.space?.isDown) {
+      if (this.gameMode === 'shoot' && this.cursors?.space?.isDown) {
         this.fire();
       }
     }

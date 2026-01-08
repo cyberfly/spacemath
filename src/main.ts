@@ -33,6 +33,7 @@ document.addEventListener('alpine:init', () => {
     gameMode: 'shoot' as GameMode,
     selectedDifficulty: 1,
     evolutionData: { from: 1, to: 2 },
+    isTouchDevice: false,
 
     // Game state (synced from Phaser)
     gameState: {
@@ -55,6 +56,9 @@ document.addEventListener('alpine:init', () => {
       this.loadProfiles();
       this.setupEventListeners();
       window.addEventListener('keydown', (event) => this.handleGlobalKeydown(event));
+      this.isTouchDevice =
+        'ontouchstart' in window ||
+        (navigator as Navigator & { maxTouchPoints?: number }).maxTouchPoints > 0;
 
       this.$watch('screen', (value: string) => {
         if (value === 'gameover') {
