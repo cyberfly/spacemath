@@ -655,6 +655,12 @@ h2 {
   font-size: 1.1rem;
 }
 
+.gameover-hint {
+  margin-top: 16px;
+  color: var(--text-muted);
+  font-size: 0.95rem;
+}
+
 /* Evolution Animation */
 .evolution-modal {
   background: linear-gradient(135deg, var(--surface), #312e81);
