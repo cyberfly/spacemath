@@ -43,8 +43,8 @@ document.addEventListener('alpine:init', () => {
       xpEarned: 0,
       currentEquation: '',
       typedAnswer: '',
-      lives: 3,
-      maxLives: 3,
+      lives: 5,
+      maxLives: 5,
     },
 
     // Phaser game instance
@@ -228,8 +228,8 @@ document.addEventListener('alpine:init', () => {
         xpEarned: 0,
         currentEquation: '',
         typedAnswer: '',
-        lives: 3,
-        maxLives: 3,
+        lives: 5,
+        maxLives: 5,
       };
 
       this.screen = 'game';

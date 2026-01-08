@@ -32,7 +32,8 @@ export class GameScene extends Phaser.Scene {
   private backgroundMusicBassGain: GainNode | null = null;
   private backgroundMusicPadGain: GainNode | null = null;
   private backgroundMusicStep: number = 0;
-  private jetOscillator: OscillatorNode | null = null;
+  private jetNoise: AudioBufferSourceNode | null = null;
+  private jetFilter: BiquadFilterNode | null = null;
   private jetGain: GainNode | null = null;
 
   private mathGenerator!: MathGenerator;
@@ -50,7 +51,7 @@ export class GameScene extends Phaser.Scene {
 
   private isGameOver: boolean = false;
   private isPaused: boolean = false;
-  private playerLives: number = 3;
+  private playerLives: number = 5;
 
   private lastFireTime: number = 0;
   private fireDelay: number = 250;
@@ -72,7 +73,7 @@ export class GameScene extends Phaser.Scene {
     this.xpEarned = 0;
     this.isGameOver = false;
     this.isPaused = false;
-    this.playerLives = 3;
+    this.playerLives = 5;
     this.currentProblem = null;
     this.enemies = [];
     this.bullets = [];
@@ -262,27 +263,42 @@ export class GameScene extends Phaser.Scene {
     const context = this.getAudioContext();
     if (!context) return;
 
+    const bufferSize = context.sampleRate * 2;
+    const buffer = context.createBuffer(1, bufferSize, context.sampleRate);
+    const data = buffer.getChannelData(0);
+    for (let i = 0; i < bufferSize; i++) {
+      data[i] = Math.random() * 2 - 1;
+    }
+
+    const noise = context.createBufferSource();
+    noise.buffer = buffer;
+    noise.loop = true;
+
+    const filter = context.createBiquadFilter();
+    filter.type = 'lowpass';
+    filter.frequency.setValueAtTime(350, context.currentTime);
+    filter.Q.setValueAtTime(0.7, context.currentTime);
+
     const gain = context.createGain();
     gain.gain.setValueAtTime(0.0001, context.currentTime);
     gain.connect(context.destination);
 
-    const osc = context.createOscillator();
-    osc.type = 'sawtooth';
-    osc.frequency.setValueAtTime(90, context.currentTime);
-    osc.connect(gain);
-    osc.start();
+    noise.connect(filter);
+    filter.connect(gain);
+    noise.start();
 
     this.jetGain = gain;
-    this.jetOscillator = osc;
+    this.jetNoise = noise;
+    this.jetFilter = filter;
   }
 
   private setJetThrust(active: boolean): void {
     if (!this.soundEnabled || !this.jetGain || !this.audioContext) return;
     const now = this.audioContext.currentTime;
     this.jetGain.gain.cancelScheduledValues(now);
-    this.jetGain.gain.setTargetAtTime(active ? 0.05 : 0.0001, now, 0.05);
-    if (this.jetOscillator) {
-      this.jetOscillator.frequency.setTargetAtTime(active ? 140 : 90, now, 0.08);
+    this.jetGain.gain.setTargetAtTime(active ? 0.07 : 0.0001, now, 0.08);
+    if (this.jetFilter) {
+      this.jetFilter.frequency.setTargetAtTime(active ? 1400 : 300, now, 0.12);
     }
   }
 
@@ -291,15 +307,17 @@ export class GameScene extends Phaser.Scene {
       this.jetGain.gain.cancelScheduledValues(this.audioContext.currentTime);
       this.jetGain.gain.setValueAtTime(0.0001, this.audioContext.currentTime);
     }
-    if (this.jetOscillator) {
+    if (this.jetNoise) {
       try {
-        this.jetOscillator.stop();
+        this.jetNoise.stop();
       } catch {
         // Oscillator may already be stopped.
       }
-      this.jetOscillator.disconnect();
-      this.jetOscillator = null;
+      this.jetNoise.disconnect();
+      this.jetNoise = null;
     }
+    this.jetFilter?.disconnect();
+    this.jetFilter = null;
     this.jetGain?.disconnect();
     this.jetGain = null;
   }
